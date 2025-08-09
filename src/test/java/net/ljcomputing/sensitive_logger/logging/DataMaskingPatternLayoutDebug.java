@@ -36,7 +36,8 @@ public class DataMaskingPatternLayoutDebug {
         layout.start();
 
         // Test credit card masking
-        layout.addMaskPattern("(\\d{4}-\\d{4}-\\d{4}-\\d{4})");
+        layout.addMaskPattern(
+                "([Cc]redit[\\s]*[Cc]ard[\\s]*[:=]\\s*[\"']?)(\\d{4}[\\-\\s]?\\d{4}[\\-\\s]?\\d{4}[\\-\\s]?\\d{4})");
 
         LoggingEvent event = new LoggingEvent();
         event.setLoggerName(logger.getName());
@@ -53,6 +54,5 @@ public class DataMaskingPatternLayoutDebug {
 
         // Count asterisks
         long asteriskCount = result.chars().filter(ch -> ch == '*').count();
-        System.out.println("Asterisk count: " + asteriskCount);
-    }
+        System.out.println("Asterisk count: " + asteriskCount);    }
 }
