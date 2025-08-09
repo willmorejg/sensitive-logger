@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Use Spring Boot property resolution -->
+    <springProperty scope="context" name="logname" source="spring.application.name" defaultValue="sensitive-logger-default-used"/>
+    <springProperty scope="context" name="token-pattern" source="logging.masking.pattern.token" defaultValue="[Tt]oken[\\s]*[:=][\\s]*[\\w\\-._]+"/>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="net.ljcomputing.sensitive_logger.logging.DataMaskingPatternLayout">
+                <maskPattern>${token-pattern}</maskPattern>
+                <pattern>%green(%date{dd MMM yyyy HH:mm:ss.SSS}) %-4relative [%thread] %highlight(%level{5}) %cyan(%logger{35}) %blue(%L) : %msg%n</pattern>
+            </layout>
+        </encoder>
+    </appender>
+
+    <timestamp key="byDay" datePattern="yyyyMMdd'T'HHmmss" />
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${user.home}/logs/${logname}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/archived/${logname}.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>100MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="net.ljcomputing.sensitive_logger.logging.DataMaskingPatternLayout">
+                <maskPattern>${token-pattern}</maskPattern>
+                <pattern>%date{dd MMM yyyy HH:mm:ss.SSS} %-4relative [%thread] %-5level %logger{35} %L : %msg%n</pattern>
+            </layout>
+        </encoder>
+    </appender>
+    <logger name="ch.qos.logback" level="ERROR"/>
+    <logger name="org.springframework" level="WARN" />
+    <logger name="org.hibernate" level="ERROR"/>
+    <logger name="org.hibernate.SQL" level="DEBUG"/>
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/>
+    <logger name="com.zaxxer.hikari" level="ERROR" />
+    <logger name="org.apache.camel" level="DEBUG" />
+    <logger name="org.sparkproject" level="WARN" />
+    <logger name="org.apache" level="WARN" />
+    <logger name="org.apache.camel" level="WARN" />
+    <logger name="io.netty" level="WARN" />
+
+    <logger name="org.testcontainers" level="WARN"/>
+    <!-- The following logger can be used for containers logs since 1.18.0 -->
+    <logger name="tc" level="WARN"/>
+    <logger name="com.github.dockerjava" level="WARN"/>
+    <logger name="com.github.dockerjava.zerodep.shaded.org.apache.hc.client5.http.wire" level="OFF"/>
+    <logger name="org.rnorth" level="WARN"/>
+
+    <logger name="net.ljcomputing" level="DEBUG" />
+
+    <root>
+        <level value="WARN" />
+        <appender-ref ref="FILE" />
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>
