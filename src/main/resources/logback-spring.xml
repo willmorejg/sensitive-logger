@@ -2,12 +2,11 @@
 <configuration>
     <!-- Use Spring Boot property resolution -->
     <springProperty scope="context" name="logname" source="spring.application.name" defaultValue="sensitive-logger-default-used"/>
-    <springProperty scope="context" name="token-pattern" source="logging.masking.pattern.token" defaultValue="[Tt]oken[\\s]*[:=][\\s]*[\\w\\-._]+"/>
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
             <layout class="net.ljcomputing.sensitive_logger.logging.DataMaskingPatternLayout">
-                <maskPattern>${token-pattern}</maskPattern>
+                <autoConfigureFromSpring>true</autoConfigureFromSpring>
                 <pattern>%green(%date{dd MMM yyyy HH:mm:ss.SSS}) %-4relative [%thread] %highlight(%level{5}) %cyan(%logger{35}) %blue(%L) : %msg%n</pattern>
             </layout>
         </encoder>
@@ -24,7 +23,7 @@
         </rollingPolicy>
         <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
             <layout class="net.ljcomputing.sensitive_logger.logging.DataMaskingPatternLayout">
-                <maskPattern>${token-pattern}</maskPattern>
+                <autoConfigureFromSpring>true</autoConfigureFromSpring>
                 <pattern>%date{dd MMM yyyy HH:mm:ss.SSS} %-4relative [%thread] %-5level %logger{35} %L : %msg%n</pattern>
             </layout>
         </encoder>

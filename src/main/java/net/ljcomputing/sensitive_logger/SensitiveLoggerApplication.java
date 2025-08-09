@@ -20,13 +20,31 @@ James G Willmore - LJ Computing - (C) 2025
 */
 package net.ljcomputing.sensitive_logger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class SensitiveLoggerApplication {
+public class SensitiveLoggerApplication implements CommandLineRunner {
+
+    private static final Logger logger = LoggerFactory.getLogger(SensitiveLoggerApplication.class);
 
     public static void main(String[] args) {
         SpringApplication.run(SensitiveLoggerApplication.class, args);
+    }
+
+    @Override
+    public void run(String... args) throws Exception {
+        // Test logging with sensitive data to verify masking is working
+        logger.info("Testing password masking: password=secretpassword123");
+        logger.info("Testing token masking: token=abc123xyz789");
+        logger.info("Testing API key masking: api-key=my-secret-api-key");
+        logger.info("Testing secret masking: secret=topsecret");
+        logger.info("Testing credit card masking: credit card=1234-5678-9012-3456");
+
+        // Also test JSON-like format
+        logger.info("JSON test: {\"password\": \"mypassword\", \"token\": \"bearer123\"}");
     }
 }

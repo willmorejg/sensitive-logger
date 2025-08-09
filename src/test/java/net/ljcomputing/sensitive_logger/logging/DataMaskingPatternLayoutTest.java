@@ -167,6 +167,61 @@ class DataMaskingPatternLayoutTest {
         assertTrue(layout.getMaskPatterns().contains("(Email: )(\\w+@\\w+\\.\\w+)"));
     }
 
+    @Test
+    void testSetMaskPatternsWithMap() {
+        java.util.Map<String, String> patterns = new java.util.HashMap<>();
+        patterns.put("token", "(token: )([\\w\\-._]+)");
+        patterns.put("password", "(password: )([\\w\\-._]+)");
+        patterns.put("credit-card", "(card: )(\\d{4}-\\d{4}-\\d{4}-\\d{4})");
+
+        layout.setMaskPatterns(patterns);
+
+        assertEquals(3, layout.getMaskPatterns().size());
+        assertTrue(layout.getMaskPatterns().contains("(token: )([\\w\\-._]+)"));
+        assertTrue(layout.getMaskPatterns().contains("(password: )([\\w\\-._]+)"));
+        assertTrue(layout.getMaskPatterns().contains("(card: )(\\d{4}-\\d{4}-\\d{4}-\\d{4})"));
+    }
+
+    @Test
+    void testSetMaskPatternsReplacesExisting() {
+        // First add some patterns
+        layout.addMaskPattern("(old: )(\\w+)");
+        assertEquals(1, layout.getMaskPatterns().size());
+
+        // Now set new patterns via map - should replace existing
+        java.util.Map<String, String> patterns = new java.util.HashMap<>();
+        patterns.put("new", "(new: )(\\w+)");
+
+        layout.setMaskPatterns(patterns);
+
+        assertEquals(1, layout.getMaskPatterns().size());
+        assertTrue(layout.getMaskPatterns().contains("(new: )(\\w+)"));
+        assertTrue(!layout.getMaskPatterns().contains("(old: )(\\w+)"));
+    }
+
+    @Test
+    void testSetMaskPatternsWithEmptyMap() {
+        layout.addMaskPattern("(existing: )(\\w+)");
+        assertEquals(1, layout.getMaskPatterns().size());
+
+        layout.setMaskPatterns(new java.util.HashMap<>());
+
+        // Empty map should be ignored, patterns remain
+        assertEquals(1, layout.getMaskPatterns().size());
+    }
+
+    @Test
+    void testSetMaskPatternsWithInvalidPattern() {
+        java.util.Map<String, String> patterns = new java.util.HashMap<>();
+        patterns.put("valid", "(valid: )(\\w+)");
+        patterns.put("invalid", "(invalid[regex"); // Invalid regex
+
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class, () -> layout.setMaskPatterns(patterns));
+        assertNotNull(exception.getMessage());
+    }
+
     private ILoggingEvent createLoggingEvent(String message) {
         LoggingEvent event = new LoggingEvent();
         event.setLoggerName(logger.getName());

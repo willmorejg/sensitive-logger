@@ -30,6 +30,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
+import net.ljcomputing.sensitive_logger.config.MaskingPatternProperties;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
+import org.springframework.lang.NonNull;
 
 /**
  * A PatternLayout that masks sensitive data in log messages based on configurable regex patterns.
@@ -39,6 +43,9 @@ import java.util.stream.Collectors;
  * the field name "token"), and the second group identifies what to redact (e.g., the actual token
  * value).
  *
+ * <p>The layout can automatically discover and load masking patterns from Spring configuration
+ * properties when used in a Spring context.
+ *
  * <p>Example configuration in logback.xml:
  *
  * <pre>
@@ -46,30 +53,38 @@ import java.util.stream.Collectors;
  *   &lt;encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder"&gt;
  *     &lt;layout class="net.ljcomputing.sensitive_logger.logging.DataMaskingPatternLayout"&gt;
  *       &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n&lt;/pattern&gt;
- *       &lt;maskPattern&gt;(token[:=]\\s*)([\\w\\-._]+)&lt;/maskPattern&gt;
- *       &lt;maskingChar&gt;*&lt;/maskingChar&gt;
+ *       &lt;autoConfigureFromSpring&gt;true&lt;/autoConfigureFromSpring&gt;
  *     &lt;/layout&gt;
  *   &lt;/encoder&gt;
  * &lt;/appender&gt;
  * </pre>
  *
- * <p>In the above example, the pattern matches "token=abc123" and will produce "token=***" where
- * the first group "(token[:=]\\s*)" is preserved and the second group "([\\w\\-._]+)" is replaced
- * with masking characters.
- *
  * @author James G Willmore
  * @since 1.0.0
  */
-public class DataMaskingPatternLayout extends PatternLayout {
+public class DataMaskingPatternLayout extends PatternLayout implements ApplicationContextAware {
 
     private static final String DEFAULT_MASKING_CHAR = "*";
     private static final String PATTERN_DELIMITER = ",";
+
+    // Static registry for all layout instances
+    private static final List<DataMaskingPatternLayout> REGISTERED_LAYOUTS = new ArrayList<>();
 
     private final List<String> maskPatterns = new ArrayList<>();
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     private Pattern compiledPattern;
     private String maskingChar = DEFAULT_MASKING_CHAR;
+    private ApplicationContext applicationContext;
+    private boolean autoConfigureFromSpring = false;
+    private boolean springConfigurationLoaded = false;
+
+    /** Constructor - register this instance in the static registry. */
+    public DataMaskingPatternLayout() {
+        synchronized (REGISTERED_LAYOUTS) {
+            REGISTERED_LAYOUTS.add(this);
+        }
+    }
 
     /**
      * Adds mask patterns for identifying sensitive data.
@@ -145,6 +160,38 @@ public class DataMaskingPatternLayout extends PatternLayout {
     }
 
     /**
+     * Sets multiple mask patterns from a map of pattern names to regex patterns.
+     *
+     * @param patternMap A map where keys are pattern names and values are regex patterns. Each
+     *     pattern must contain exactly 2 capturing groups.
+     * @throws IllegalArgumentException if any pattern is invalid or doesn't have exactly 2 capture
+     *     groups
+     */
+    public void setMaskPatterns(final java.util.Map<String, String> patternMap) {
+        if (patternMap == null || patternMap.isEmpty()) {
+            addWarn("Pattern map is null or empty");
+            return;
+        }
+
+        lock.writeLock().lock();
+        try {
+            // Clear existing patterns
+            maskPatterns.clear();
+
+            // Validate and add all patterns
+            final List<String> newPatterns = new ArrayList<>(patternMap.values());
+            validatePatterns(newPatterns);
+
+            maskPatterns.addAll(newPatterns);
+            recompilePattern();
+
+            addInfo("Set " + newPatterns.size() + " mask pattern(s) from configuration");
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * Gets a copy of the current mask patterns.
      *
      * @return a list of mask patterns
@@ -158,8 +205,74 @@ public class DataMaskingPatternLayout extends PatternLayout {
         }
     }
 
+    /**
+     * Sets the ApplicationContext for Spring integration.
+     *
+     * @param applicationContext the Spring application context
+     */
+    @Override
+    public void setApplicationContext(@NonNull final ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+        if (autoConfigureFromSpring) {
+            loadPatternsFromSpring();
+        }
+    }
+
+    /**
+     * Enables automatic configuration from Spring properties.
+     *
+     * @param autoConfigureFromSpring true to enable auto-configuration
+     */
+    public void setAutoConfigureFromSpring(boolean autoConfigureFromSpring) {
+        this.autoConfigureFromSpring = autoConfigureFromSpring;
+        if (autoConfigureFromSpring && applicationContext != null && !springConfigurationLoaded) {
+            loadPatternsFromSpring();
+        }
+    }
+
+    /** Loads masking patterns from Spring configuration properties. */
+    private void loadPatternsFromSpring() {
+        if (applicationContext == null || springConfigurationLoaded) {
+            return;
+        }
+
+        try {
+            MaskingPatternProperties properties =
+                    applicationContext.getBean(MaskingPatternProperties.class);
+            if (properties.hasPatterns()) {
+                lock.writeLock().lock();
+                try {
+                    // Clear existing patterns and load from Spring
+                    maskPatterns.clear();
+                    maskPatterns.addAll(properties.getPatterns().values());
+
+                    // Set masking character
+                    this.maskingChar = properties.getMaskingChar();
+
+                    // Recompile patterns
+                    recompilePattern();
+
+                    springConfigurationLoaded = true;
+                    addInfo(
+                            "Loaded "
+                                    + maskPatterns.size()
+                                    + " patterns from Spring configuration");
+                } finally {
+                    lock.writeLock().unlock();
+                }
+            }
+        } catch (Exception e) {
+            addWarn("Failed to load patterns from Spring configuration: " + e.getMessage());
+        }
+    }
+
     @Override
     public String doLayout(final ILoggingEvent event) {
+        // Ensure patterns are loaded from Spring if auto-configuration is enabled
+        if (autoConfigureFromSpring && !springConfigurationLoaded && applicationContext != null) {
+            loadPatternsFromSpring();
+        }
+
         final String originalMessage = super.doLayout(event);
         return maskSensitiveData(originalMessage);
     }
@@ -205,13 +318,19 @@ public class DataMaskingPatternLayout extends PatternLayout {
         final List<MaskingInfo> maskingOperations = new ArrayList<>();
 
         while (matcher.find()) {
-            // Ensure we have exactly 2 groups as expected
-            if (matcher.groupCount() == 2 && matcher.group(1) != null && matcher.group(2) != null) {
-                // Group 1 is preserved (identifier/key)
-                // Group 2 is redacted (sensitive value)
-                final int valueStart = matcher.start(2);
-                final int valueEnd = matcher.end(2);
-                maskingOperations.add(new MaskingInfo(valueStart, valueEnd));
+            // With alternation (|), we need to find which groups are non-null
+            // Each pattern has 2 groups, so we look for pairs
+            for (int i = 1; i < matcher.groupCount(); i += 2) {
+                String key = matcher.group(i); // Group i: identifier/key
+                String value = matcher.group(i + 1); // Group i+1: sensitive value
+
+                if (key != null && value != null) {
+                    // Group i+1 is the sensitive value to redact
+                    final int valueStart = matcher.start(i + 1);
+                    final int valueEnd = matcher.end(i + 1);
+                    maskingOperations.add(new MaskingInfo(valueStart, valueEnd));
+                    break; // Only one pattern can match at a time
+                }
             }
         }
 
@@ -323,6 +442,36 @@ public class DataMaskingPatternLayout extends PatternLayout {
         MaskingInfo(final int start, final int end) {
             this.start = start;
             this.end = end;
+        }
+    }
+
+    /**
+     * Check if this layout has been configured from Spring context.
+     *
+     * @return true if configured from Spring, false otherwise
+     */
+    public boolean isConfiguredFromSpring() {
+        return applicationContext != null;
+    }
+
+    /**
+     * Configure all registered DataMaskingPatternLayout instances with Spring patterns. This is
+     * called by the Spring configuration to set up all layouts created by Logback.
+     */
+    public static void configureAllLayouts(
+            ApplicationContext applicationContext,
+            MaskingPatternProperties maskingPatternProperties) {
+        synchronized (REGISTERED_LAYOUTS) {
+            for (DataMaskingPatternLayout layout : REGISTERED_LAYOUTS) {
+                if (layout.autoConfigureFromSpring) {
+                    layout.setApplicationContext(applicationContext);
+
+                    if (maskingPatternProperties.hasPatterns()) {
+                        layout.setMaskPatterns(maskingPatternProperties.getPatterns());
+                    }
+                    layout.setMaskingChar(maskingPatternProperties.getMaskingChar());
+                }
+            }
         }
     }
 }
